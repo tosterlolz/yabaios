@@ -36,8 +36,8 @@ typedef struct {
     uint32_t fileSize;
 } __attribute__((packed)) FAT_DirEntry;
 
-// image_base points to the module memory provided by GRUB; size is the module size in bytes
-bool fat_init(void *image_base, uint32_t size);
+// image_base points to the module memory provided by GRUB
+bool fat_init(void *image_base);
 void fat_list_files(void);
 bool fat_read_file(const char *filename, void *out_buffer, uint32_t *out_size);
 bool fat_create_file(const char *filename);
