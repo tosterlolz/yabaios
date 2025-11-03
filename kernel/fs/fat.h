@@ -39,6 +39,7 @@ typedef struct {
 // image_base points to the module memory provided by GRUB
 bool fat_init(void *image_base);
 void fat_list_files(void);
+void fat_list_files_in_dir(const char *path);
 bool fat_read_file(const char *filename, void *out_buffer, uint32_t *out_size);
 bool fat_create_file(const char *filename);
 bool fat_write_file(const char *filename, const void *data, uint32_t size);

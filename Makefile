@@ -63,12 +63,17 @@ $(ISO_NAME): $(KERNEL_BIN) $(CORE_ELFS) $(FS_IMG)
 	cp $(KERNEL_BIN) $(ISO_DIR)/boot/kernel.elf
 
 	# copy core ELF programs and the filesystem image into the ISO so GRUB can load the fs image as a module
-	mkdir -p $(ISO_DIR)
-	cp $(CORE_ELFS) $(ISO_DIR) || true
+	mkdir -p $(ISO_DIR)/core
+	cp $(CORE_ELFS) $(ISO_DIR)/core || true
 	cp $(FS_IMG) $(ISO_DIR)/fs.img || true
 
 	echo 'set timeout=0' > $(ISO_DIR)/boot/grub/grub.cfg
 	echo 'set default=0' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'insmod gfxterm' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'insmod vbe' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'set gfxmode=1024x768x32' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'set gfxpayload=keep' >> $(ISO_DIR)/boot/grub/grub.cfg
+	echo 'terminal_output gfxterm' >> $(ISO_DIR)/boot/grub/grub.cfg
 	# Load kernel and also provide the FAT image as a module so the kernel receives it via multiboot modules
 	echo 'menuentry "YabaiOS" { ' >> $(ISO_DIR)/boot/grub/grub.cfg
 	echo '  multiboot /boot/kernel.elf' >> $(ISO_DIR)/boot/grub/grub.cfg
@@ -88,7 +93,6 @@ $(FS_IMG): $(CORE_ELFS)
 	# copy core ELF files into the image using mtools (mcopy)
 	# create /core directory and copy core ELF files into it
 	mmd -i $@ ::/core >/dev/null 2>&1 || true
-	mcopy -i $@ $(CORE_ELFS) ::/ >/dev/null 2>&1 || { echo "mcopy failed; ensure mtools is installed"; exit 1; }
 	mcopy -i $@ $(CORE_ELFS) ::/core/ >/dev/null 2>&1 || { echo "mcopy failed; ensure mtools is installed"; exit 1; }
 
 

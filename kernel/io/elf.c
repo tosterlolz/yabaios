@@ -127,14 +127,22 @@ int elf_run_from_memory(void *elf, uint32_t elf_size, const char *argstr) {
     static struct kernel_api api;
     api.log_print = log_print;
     api.log_put_char = log_put_char;
+    api.log_putchar = log_put_char;
+    api.log_print_int = log_print_int;
+    api.strlen = strlen;
     api.log_clear = log_clear;
     api.log_backspace = log_backspace;
     api.log_set_color = log_set_color;
-    api.fat_read_file = (int(*)(const char*,void*,uint32_t*))fat_read_file;
+    api.fat_read_file = (int(*)(const char*,void*,uint32_t))fat_read_file;
     api.fat_write_file = (int(*)(const char*,const void*,uint32_t))fat_write_file;
     api.fat_list_files = fat_list_files;
     api.get_cwd = kernel_get_cwd;
     api.set_cwd = kernel_set_cwd;
+    api.fat_list_files_in_dir = fat_list_files_in_dir;
+    api.fat_create_dir = NULL;  // Not implemented yet
+    api.fat_delete_file = NULL; // Not implemented yet
+    api.fat_copy_file = NULL;   // Not implemented yet
+    api.fat_move_file = NULL;   // Not implemented yet
 
     // Parse arguments
     parse_args(argstr);

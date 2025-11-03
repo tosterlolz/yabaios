@@ -40,3 +40,34 @@ void log_hex(const char *prefix, uint32_t value) {
     }
     log_print("\n");
 }
+
+void log_putchar(char c) {
+    vga_put_char(c);
+}
+
+void log_print_int(int value) {
+    if (value == 0) {
+        log_put_char('0');
+        return;
+    }
+    
+    int is_negative = value < 0;
+    if (is_negative) {
+        log_put_char('-');
+        value = -value;
+    }
+    
+    char buffer[12];
+    int idx = 0;
+    
+    while (value > 0) {
+        buffer[idx++] = '0' + (value % 10);
+        value /= 10;
+    }
+    
+    // Print in reverse
+    for (int i = idx - 1; i >= 0; i--) {
+        log_put_char(buffer[i]);
+    }
+}
+

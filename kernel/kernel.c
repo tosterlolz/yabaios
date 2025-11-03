@@ -45,8 +45,27 @@ void kernel_main(uint32_t magic, uint32_t addr) {
 
     /* Attempt to initialize framebuffer if available */
     if (mbi->framebuffer_addr != 0 && mbi->framebuffer_width > 0 && mbi->framebuffer_height > 0) {
-        uint8_t bpp = (mbi->framebuffer_bpp + 7) / 8;
-        if (mbi->framebuffer_type == 1 && bpp == 4) {  /* RGB direct color, 32-bit */
+        log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
+        log_print("Framebuffer info: type=");
+        log_put_char('0' + mbi->framebuffer_type);
+        log_print(" bpp=");
+        if (mbi->framebuffer_bpp >= 10) {
+            log_put_char('0' + (mbi->framebuffer_bpp / 10));
+        }
+        log_put_char('0' + (mbi->framebuffer_bpp % 10));
+        log_print(" addr=0x");
+        log_put_char("0123456789ABCDEF"[(mbi->framebuffer_addr >> 28) & 0xF]);
+        log_put_char("0123456789ABCDEF"[(mbi->framebuffer_addr >> 24) & 0xF]);
+        log_print("\n");
+        log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
+        
+        /* Support RGB direct color (type=1) and indexed color (type=0) framebuffers
+         * Type 0: Indexed color (palette)
+         * Type 1: RGB direct color
+         * Type 2: EGA text
+         */
+        if (mbi->framebuffer_type == 1 && (mbi->framebuffer_bpp == 32 || mbi->framebuffer_bpp == 24)) {
+            /* RGB direct color mode */
             if (vga_use_framebuffer(
                 mbi->framebuffer_addr,
                 mbi->framebuffer_pitch,
@@ -60,16 +79,28 @@ void kernel_main(uint32_t magic, uint32_t addr) {
                 (uint8_t)mbi->framebuffer_blue_field_position,
                 (uint8_t)mbi->framebuffer_blue_mask_size)) {
                 log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
-                log_print("✓ Framebuffer initialized!\n");
+                log_print("✓ RGB Framebuffer initialized!\n");
                 log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
             } else {
                 log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
                 log_print("✗ Framebuffer init failed, using VGA text mode.\n");
                 log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
             }
+        } else if (mbi->framebuffer_type == 0 && mbi->framebuffer_bpp >= 8) {
+            /* Indexed color mode - convert to RGB by using default palette */
+            log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
+            log_print("ℹ Indexed color mode detected (not yet supported), using VGA text.\n");
+            log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
         } else {
             log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
-            log_print("✗ Unsupported framebuffer type, using VGA text mode.\n");
+            log_print("✗ Unsupported framebuffer type=");
+            log_put_char('0' + mbi->framebuffer_type);
+            log_print(" bpp=");
+            if (mbi->framebuffer_bpp >= 10) {
+                log_put_char('0' + (mbi->framebuffer_bpp / 10));
+            }
+            log_put_char('0' + (mbi->framebuffer_bpp % 10));
+            log_print(", using VGA text mode.\n");
             log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
         }
     } else {

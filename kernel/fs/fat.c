@@ -233,6 +233,102 @@ void fat_list_files(void) {
     }
 }
 
+void fat_list_files_in_dir(const char *path) {
+    if (!path || path[0] == '\0' || (path[0] == '/' && path[1] == '\0')) {
+        /* Root directory */
+        fat_list_files();
+        return;
+    }
+
+    /* Convert path to 8.3 format and look it up */
+    uint8_t dir_name11[11];
+    fat_format_83_name(path, dir_name11);
+
+    /* List files in root directory to find the subdirectory */
+    FAT_DirEntry *root_entries = (FAT_DirEntry *)(fat_image + root_dir_offset);
+
+    for (int i = 0; i < bpb->rootEntryCount; i++) {
+        if (root_entries[i].name[0] == 0x00)
+            break;
+        if ((root_entries[i].name[0] & 0xFF) == 0xE5)
+            continue;
+        if (root_entries[i].attr == 0x0F)
+            continue;
+
+        /* Check if this is a directory entry matching our path */
+        if (memcmp(root_entries[i].name, dir_name11, 11) == 0 && (root_entries[i].attr & 0x10)) {
+            /* Found directory, list its contents */
+            uint16_t cluster = root_entries[i].clusterLow;
+            uint32_t bytesPerCluster = bpb->sectorsPerCluster * bpb->bytesPerSector;
+            uint32_t data_offset = (bpb->reservedSectors + bpb->numFATs * bpb->sectorsPerFAT + 
+                                   (bpb->rootEntryCount * 32 + bpb->bytesPerSector - 1) / bpb->bytesPerSector) * 
+                                  bpb->bytesPerSector;
+
+            log_message("FAT: Directory listing:");
+
+            while (cluster < 0xFF8) {
+                uint32_t dir_offset = data_offset + (cluster - 2) * bytesPerCluster;
+                FAT_DirEntry *dir_entries = (FAT_DirEntry *)(fat_image + dir_offset);
+
+                for (int j = 0; j < bytesPerCluster / sizeof(FAT_DirEntry); j++) {
+                    if (dir_entries[j].name[0] == 0x00)
+                        return;
+                    if ((dir_entries[j].name[0] & 0xFF) == 0xE5)
+                        continue;
+                    if (dir_entries[j].attr == 0x0F)
+                        continue;
+                    if (dir_entries[j].attr & 0x08)
+                        continue;
+
+                    /* Build printable filename */
+                    char name[13];
+                    int pos = 0;
+                    for (int k = 0; k < 8; k++) {
+                        unsigned char c = dir_entries[j].name[k];
+                        if (c == ' ') break;
+                        if (c < 0x20 || c > 0x7E) break;
+                        name[pos++] = (char)c;
+                    }
+                    int extStart = pos;
+                    for (int k = 8; k < 11; k++) {
+                        unsigned char c = dir_entries[j].name[k];
+                        if (c == ' ') continue;
+                        if (c < 0x20 || c > 0x7E) continue;
+                        if (pos == extStart) {
+                            name[pos++] = '.';
+                        }
+                        name[pos++] = (char)c;
+                    }
+                    if (pos == 0) continue;
+                    name[pos] = '\0';
+
+                    /* Convert to lowercase */
+                    for (int k = 0; name[k]; k++) {
+                        if (name[k] >= 'A' && name[k] <= 'Z') {
+                            name[k] = (char)(name[k] - 'A' + 'a');
+                        }
+                    }
+
+                    log_print("  ");
+                    log_print(name);
+                    log_print("\n");
+                }
+
+                /* Get next cluster */
+                uint32_t fatOffset = bpb->reservedSectors * bpb->bytesPerSector + cluster * 3 / 2;
+                uint16_t nextCluster = *(uint16_t *)(fat_image + fatOffset);
+                if (cluster & 1) nextCluster >>= 4;
+                else nextCluster &= 0x0FFF;
+                if (nextCluster >= 0xFF8) break;
+                cluster = nextCluster;
+            }
+            return;
+        }
+    }
+
+    log_message("FAT: Directory not found");
+}
+
 // --- Minimal FAT12 helpers for creating small files (one cluster) ---
 static uint16_t fat_get_entry(uint16_t cluster) {
     uint32_t fatOffset = bpb->reservedSectors * bpb->bytesPerSector + cluster * 3 / 2;

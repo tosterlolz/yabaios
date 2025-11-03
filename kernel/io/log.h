@@ -7,6 +7,8 @@ void log_init();
 void log_message(const char *message);
 void log_print(const char *message);
 void log_put_char(char c);
+void log_putchar(char c);
+void log_print_int(int value);
 void log_clear();
 void log_backspace();
 void log_set_color(uint8_t fg, uint8_t bg);
