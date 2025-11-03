@@ -123,7 +123,7 @@ fn bufferPop() u8 {
     return ch;
 }
 
-fn processScancode(scancode: u8) void {
+pub fn processScancode(scancode: u8) void {
     if (scancode == 0xE0) {
         extended_code = true;
         return;
@@ -197,4 +197,15 @@ pub export fn keyboard_handle_input() void {
 pub export fn keyboard_get_char() u8 {
     keyboard_handle_input();
     return bufferPop();
+}
+
+pub export fn keyboard_interrupt_handler() void {
+    // Read scancode from keyboard port
+    const scancode = io.in8(PORT_DATA);
+
+    // Process the scancode
+    processScancode(scancode);
+
+    // Signal EOI to PIC
+    io.out8(0x20, 0x20);
 }

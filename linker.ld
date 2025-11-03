@@ -2,10 +2,14 @@ ENTRY(_start)
 
 SECTIONS
 {
-    . = 1M; /* kernel starts at 1MB */
+    /* Multiboot-compatible entry at 1MB for bootloader compatibility */
+    . = 1M;
+
+    .multiboot_header : {
+        *(.multiboot_header)
+    }
 
     .text : {
-        *(.multiboot)
         *(.text*)
     }
 

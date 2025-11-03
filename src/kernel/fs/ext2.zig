@@ -83,9 +83,30 @@ pub export fn ext2_init(image: usize) bool {
     const log = @import("../log.zig");
     log.print_message("ext2: Initializing filesystem\n");
 
+    // Log the image base address and first few bytes
+    var addr_buf: [64]u8 = [_]u8{0} ** 64;
+    _ = std.fmt.bufPrintZ(&addr_buf, "Image base: 0x{X:0>8}\n", .{image}) catch return false;
+    log.print_message(@as([*:0]const u8, @ptrCast(&addr_buf)));
+
+    // Log first 16 bytes
+    var first_bytes_buf: [128]u8 = [_]u8{0} ** 128;
+    _ = std.fmt.bufPrintZ(&first_bytes_buf, "First bytes: {X:0>2} {X:0>2} {X:0>2} {X:0>2}\n", .{ base[0], base[1], base[2], base[3] }) catch return false;
+    log.print_message(@as([*:0]const u8, @ptrCast(&first_bytes_buf)));
+
     // Superblock is at offset 1024
     const sb_ptr: *Ext2Superblock = @ptrCast(@alignCast(&base[1024]));
 
+    // Log bytes at offset 1024
+    var offset_buf: [128]u8 = [_]u8{0} ** 128;
+    _ = std.fmt.bufPrintZ(&offset_buf, "Offset 1024: {X:0>2} {X:0>2} {X:0>2} {X:0>2}\n", .{ base[1024], base[1025], base[1026], base[1027] }) catch return false;
+    log.print_message(@as([*:0]const u8, @ptrCast(&offset_buf)));
+
+    const magic_val: u16 = sb_ptr.magic;
+    var magic_buf: [64]u8 = [_]u8{0} ** 64;
+
+    // Print magic value in hex
+    _ = std.fmt.bufPrintZ(&magic_buf, "Magic: 0x{X:0>4}\n", .{magic_val}) catch return false;
+    log.print_message(@as([*:0]const u8, @ptrCast(&magic_buf)));
     if (sb_ptr.magic != 0xEF53) {
         log.print_message("ext2: Invalid magic number\n");
         return false;

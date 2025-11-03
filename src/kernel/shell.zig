@@ -27,6 +27,12 @@ pub fn shell_init() void {
 }
 
 pub fn shell_run() noreturn {
+    vga.vga_print("\n=== YabaiOS 64-bit Kernel Running ===\n");
+    vga.vga_print("Filesystem support: ext2\n");
+    vga.vga_print("Architecture: x86_64\n");
+    vga.vga_print("Bootloader: Custom GRUB2-compatible\n");
+    vga.vga_print("Interrupts: Enabled\n\n");
+
     while (true) {
         shell_prompt();
         shell_read_line();

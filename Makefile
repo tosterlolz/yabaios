@@ -2,9 +2,8 @@
 
 ZIG := zig
 NASM := nasm
-LD := i686-elf-ld
-GRUBMKRESCUE := grub-mkrescue
-QEMU := qemu-system-i386
+LD := x86_64-elf-ld
+QEMU := qemu-system-x86_64
 
 ROOT_SRC := src/kernel/kernel.zig
 ALL_SRCS := $(shell find src -name '*.zig')
@@ -13,13 +12,14 @@ PROGRAM_SRCS := $(wildcard src/programs/*.zig)
 PROGRAM_ELFS := $(patsubst src/programs/%.zig, zig-out/programs/%.elf, $(PROGRAM_SRCS))
 
 OBJ := zig-out/kernel.o
-MULTIBOOT_OBJ := zig-out/build/multiboot_header.o
+BOOT_OBJ := zig-out/build/boot64.o
+INTERRUPT_STUBS := zig-out/build/interrupt_stubs.o
 KERNEL_ELF := zig-out/build/kernel.elf
 PROGRAM_IMG := zig-out/initfs.img
 ISO_DIR := zig-out/iso
 ISO := zig-out/YabaiOS.iso
 
-ZIGFLAGS := build-obj -target x86-freestanding-none -mcpu=i386 -O ReleaseSmall -femit-bin=$(OBJ)
+ZIGFLAGS := build-obj -target x86_64-freestanding-none -O ReleaseSmall -femit-bin=$(OBJ)
 
 .PHONY: all clean run kernel iso
 
@@ -35,7 +35,7 @@ $(OBJ): $(ALL_SRCS)
 
 $(PROGRAM_ELFS): zig-out/programs/%.elf: src/programs/%.zig
 	@mkdir -p $(dir $@)
-	$(ZIG) build-exe -target x86-freestanding-none -mcpu=i386 -O ReleaseSmall $< -femit-bin=$@
+	$(ZIG) build-exe -target x86_64-freestanding-none -O ReleaseSmall $< -femit-bin=$@
 
 $(PROGRAM_IMG): $(PROGRAM_ELFS)
 	@mkdir -p zig-out/fs/bin
@@ -43,33 +43,35 @@ $(PROGRAM_IMG): $(PROGRAM_ELFS)
 	rm -f $@
 	genext2fs --block-size 1024 --size-in-blocks 512 --root zig-out/fs -f $@
 
-$(MULTIBOOT_OBJ): ./src/boot/multiboot_header.asm
+$(BOOT_OBJ): ./src/boot/boot64.asm
 	@mkdir -p $(dir $@)
-	$(NASM) -f elf32 $< -o $@
+	$(NASM) -f elf64 $< -o $@
 
-$(KERNEL_ELF): $(MULTIBOOT_OBJ) $(OBJ) linker.ld
+$(INTERRUPT_STUBS): ./src/boot/interrupt_stubs.asm
 	@mkdir -p $(dir $@)
-	$(LD) -T linker.ld -o $@ $(MULTIBOOT_OBJ) $(OBJ)
+	$(NASM) -f elf64 $< -o $@
+
+zig-out/libc_stub.o: libc_stub.c
+	@mkdir -p $(dir $@)
+	x86_64-elf-gcc -c -fno-builtin -nostdlib -fno-stack-protector -o $@ $<
+
+$(KERNEL_ELF): $(BOOT_OBJ) $(OBJ) $(INTERRUPT_STUBS) zig-out/libc_stub.o linker.ld
+	@mkdir -p $(dir $@)
+	$(LD) -T linker.ld -o $@ $(BOOT_OBJ) $(OBJ) $(INTERRUPT_STUBS) zig-out/libc_stub.o
 
 $(ISO): $(KERNEL_ELF) $(PROGRAM_IMG)
 	@mkdir -p $(ISO_DIR)/boot/grub
 	cp $(KERNEL_ELF) $(ISO_DIR)/boot/kernel.elf
 	cp $(PROGRAM_IMG) $(ISO_DIR)/boot/initfs.img
 	printf 'set timeout=0\n' > $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'set default=0\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'insmod gfxterm\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'insmod vbe\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'set gfxmode=1280x720x32\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'set gfxpayload=keep\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'terminal_output gfxterm\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf 'menuentry "YabaiOS" { \n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf '  multiboot /boot/kernel.elf\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	printf '  module /boot/initfs.img\n' >> $(ISO_DIR)/boot/grub/grub.cfg
+	printf 'menuentry "YabaiOS" {\n' >> $(ISO_DIR)/boot/grub/grub.cfg
+	printf '  multiboot2 /boot/kernel.elf\n' >> $(ISO_DIR)/boot/grub/grub.cfg
+	printf '  module2 /boot/initfs.img\n' >> $(ISO_DIR)/boot/grub/grub.cfg
 	printf '}\n' >> $(ISO_DIR)/boot/grub/grub.cfg
-	$(GRUBMKRESCUE) -o $(ISO) $(ISO_DIR)
+	grub-mkrescue -o $(ISO) $(ISO_DIR) 2>/dev/null
 
 run: $(ISO)
-	$(QEMU) -cdrom $(ISO)
+	$(QEMU) -m 256 -cdrom $(ISO) -serial stdio
 
 clean:
 	rm -rf zig-out
