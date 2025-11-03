@@ -6,3 +6,4 @@ build/
 *.o
 *.log
 *.d
+iso/

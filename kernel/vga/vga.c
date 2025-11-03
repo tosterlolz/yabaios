@@ -39,8 +39,20 @@ void vga_clear() {
 void vga_put_char(char c) {
     if (c == '\n') {
         cursor_col = 0;
-        if (++cursor_row == VGA_HEIGHT)
-            cursor_row = 0;
+        cursor_row++;
+        if (cursor_row >= VGA_HEIGHT) {
+            // scroll up one line
+            for (size_t y = 0; y + 1 < VGA_HEIGHT; y++) {
+                for (size_t x = 0; x < VGA_WIDTH; x++) {
+                    VGA_MEMORY[y * VGA_WIDTH + x] = VGA_MEMORY[(y + 1) * VGA_WIDTH + x];
+                }
+            }
+            // clear last line
+            for (size_t x = 0; x < VGA_WIDTH; x++) {
+                VGA_MEMORY[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = vga_entry(' ', color);
+            }
+            cursor_row = VGA_HEIGHT - 1;
+        }
         return;
     }
 
@@ -49,8 +61,19 @@ void vga_put_char(char c) {
 
     if (++cursor_col == VGA_WIDTH) {
         cursor_col = 0;
-        if (++cursor_row == VGA_HEIGHT)
-            cursor_row = 0;
+        cursor_row++;
+        if (cursor_row >= VGA_HEIGHT) {
+            // scroll as above
+            for (size_t y = 0; y + 1 < VGA_HEIGHT; y++) {
+                for (size_t x = 0; x < VGA_WIDTH; x++) {
+                    VGA_MEMORY[y * VGA_WIDTH + x] = VGA_MEMORY[(y + 1) * VGA_WIDTH + x];
+                }
+            }
+            for (size_t x = 0; x < VGA_WIDTH; x++) {
+                VGA_MEMORY[(VGA_HEIGHT - 1) * VGA_WIDTH + x] = vga_entry(' ', color);
+            }
+            cursor_row = VGA_HEIGHT - 1;
+        }
     }
 }
 

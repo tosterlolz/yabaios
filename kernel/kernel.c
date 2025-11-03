@@ -41,7 +41,7 @@ void kernel_main(uint32_t magic, uint32_t addr) {
     } else {
     log_message("No FAT module found.");
     }
-    log_message("\PS/2 Driver and YabaiShell starting...");
+    log_message("PS/2 Driver and YabaiShell starting...");
     keyboard_init();
     shell_init();
     shell_run();

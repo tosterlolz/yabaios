@@ -36,8 +36,15 @@ typedef struct {
     uint32_t fileSize;
 } __attribute__((packed)) FAT_DirEntry;
 
-bool fat_init(void *image_base);
+// image_base points to the module memory provided by GRUB; size is the module size in bytes
+bool fat_init(void *image_base, uint32_t size);
 void fat_list_files(void);
-bool fat_read_file(const char *filename, void *out_buffer);
+bool fat_read_file(const char *filename, void *out_buffer, uint32_t *out_size);
+bool fat_create_file(const char *filename);
+bool fat_write_file(const char *filename, const void *data, uint32_t size);
+// Read a file inside a named subdirectory (both names in 8.3 form, 11 bytes)
+bool fat_read_file_in_dir(const char *dir11, const char *filename11, void *out_buffer, uint32_t *out_size);
+// helper to format a human filename into 8.3 (11 bytes)
+void fat_format_83_name(const char *src, uint8_t dest[11]);
 
 #endif

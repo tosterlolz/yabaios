@@ -6,7 +6,7 @@ void log_init() {
 }
 
 void log_message(const char *message) {
-    vga_print("[LOG] \"");
+    vga_print("\n[LOG] \"");
     vga_print(message);
     vga_print("\"\n");
 }
