@@ -10,5 +10,6 @@ void log_put_char(char c);
 void log_clear();
 void log_backspace();
 void log_set_color(uint8_t fg, uint8_t bg);
+void log_hex(const char *prefix, uint32_t value);
 
 #endif

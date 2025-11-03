@@ -1,9 +1,21 @@
 // echo program using kernel API
-#include "kernel.h"
+#include "../kernel/kernel.h"
 
 void _start() {
-    const char *args;
-    __asm__("movl %%ebx, %0" : "=r"(args));
-    kernel_api()->log_print(args);
-    for (;;) __asm__("hlt");
+    struct program_args *args = program_args();
+
+    if (!args || args->argc <= 1) {
+        kernel_api()->log_print("\n");
+        return;
+    }
+
+    /* Print all arguments separated by spaces */
+    for (int i = 1; i < args->argc; i++) {
+        if (i > 1) {
+            kernel_api()->log_put_char(' ');
+        }
+        kernel_api()->log_print(args->argv[i]);
+    }
+    kernel_api()->log_print("\n");
 }
+

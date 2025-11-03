@@ -2,11 +2,23 @@
 #include "string.h"
 #include "log.h"
 #include "../fs/fat.h"
+#include "../kernel.h"
 #include <stdint.h>
 #include <stddef.h>
 
+/* External kernel functions */
+extern const char *kernel_get_cwd(void);
+extern int kernel_set_cwd(const char *path);
+
 // Simple execution area (1MB)
 static uint8_t exec_area[1024*1024];
+
+// Space for argc/argv
+#define MAX_ARGV 64
+#define ARGV_BUFFER_SIZE 1024
+static const char *argv_buffer[MAX_ARGV];
+static char argv_strings[ARGV_BUFFER_SIZE];
+static struct program_args args_struct;
 
 // Minimal ELF structures
 typedef struct {
@@ -39,6 +51,57 @@ typedef struct {
 
 #define PT_LOAD 1
 
+/* Parse argument string into argc/argv array.
+ * The shell passes the command name as argv[0], then remaining args.
+ * Format: "ls" or "echo hello world"
+ */
+static int parse_args(const char *argstr) {
+    if (!argstr || !*argstr) {
+        args_struct.argc = 0;
+        args_struct.argv = argv_buffer;
+        return 0;
+    }
+
+    int argc = 0;
+    int buf_offset = 0;
+    int in_word = 0;
+    int word_start = 0;
+
+    for (int i = 0; argstr[i] != '\0' && argc < MAX_ARGV - 1; i++) {
+        char c = argstr[i];
+
+        if (c == ' ' || c == '\t') {
+            if (in_word) {
+                /* End current word */
+                if (buf_offset < ARGV_BUFFER_SIZE) {
+                    argv_strings[buf_offset++] = '\0';
+                }
+                argv_buffer[argc++] = &argv_strings[word_start];
+                in_word = 0;
+            }
+        } else {
+            if (!in_word) {
+                /* Start new word */
+                word_start = buf_offset;
+                in_word = 1;
+            }
+            if (buf_offset < ARGV_BUFFER_SIZE - 1) {
+                argv_strings[buf_offset++] = c;
+            }
+        }
+    }
+
+    /* Handle last word */
+    if (in_word && buf_offset < ARGV_BUFFER_SIZE) {
+        argv_strings[buf_offset++] = '\0';
+        argv_buffer[argc++] = &argv_strings[word_start];
+    }
+
+    args_struct.argc = argc;
+    args_struct.argv = argv_buffer;
+    return argc;
+}
+
 int elf_run_from_memory(void *elf, uint32_t elf_size, const char *argstr) {
     if (elf_size < sizeof(Elf32_Ehdr)) return -1;
     Elf32_Ehdr *eh = (Elf32_Ehdr *)elf;
@@ -61,15 +124,7 @@ int elf_run_from_memory(void *elf, uint32_t elf_size, const char *argstr) {
     void (*entry)(const char *) = (void (*)(const char *))(base + eh->e_entry);
 
     // prepare kernel API struct and set ESI to point to it for core programs
-    static struct kernel_api {
-        void (*log_print)(const char *);
-        void (*log_put_char)(char);
-        void (*log_clear)(void);
-        void (*log_backspace)(void);
-        void (*log_set_color)(uint8_t fg, uint8_t bg);
-        int  (*fat_read_file)(const char *filename, void *out_buffer, uint32_t *out_size);
-        int  (*fat_write_file)(const char *filename, const void *data, uint32_t size);
-    } api;
+    static struct kernel_api api;
     api.log_print = log_print;
     api.log_put_char = log_put_char;
     api.log_clear = log_clear;
@@ -77,17 +132,27 @@ int elf_run_from_memory(void *elf, uint32_t elf_size, const char *argstr) {
     api.log_set_color = log_set_color;
     api.fat_read_file = (int(*)(const char*,void*,uint32_t*))fat_read_file;
     api.fat_write_file = (int(*)(const char*,const void*,uint32_t))fat_write_file;
+    api.fat_list_files = fat_list_files;
+    api.get_cwd = kernel_get_cwd;
+    api.set_cwd = kernel_set_cwd;
 
-    // call entry with EBX = argstr and ESI = &api
+    // Parse arguments
+    parse_args(argstr);
+
+    // call entry with EBX = argstr, ESI = &api, and EDX = &args_struct
+    // Use memory location to hold function pointer to avoid constraint issues
+    void (*entry_func)(void) = entry;
     __asm__ volatile (
-        "movl %0, %%ebx\n"
-        "movl %1, %%esi\n"
-        "call *%2\n"
+        "movl %0, %%ebx\n\t"
+        "movl %1, %%esi\n\t"
+        "movl %2, %%edx\n\t"
+        "call *%3\n\t"
         :
-        : "r" (argstr), "r" (&api), "r" (entry)
-        : "%ebx", "%esi"
+        : "g" (argstr), "g" (&api), "g" (&args_struct), "g" (entry_func)
+        : "%ebx", "%esi", "%edx"
     );
 
     return 0;
 }
+
 

@@ -3,7 +3,7 @@ CC = i686-elf-gcc
 LD = i686-elf-ld
 QEMU = qemu-system-i386
 
-CFLAGS = -ffreestanding -O2 -Wall -Wextra -fno-exceptions -fno-rtti -nostdlib -I kernel
+CFLAGS = -ffreestanding -O0 -g -Wall -Wextra -fno-exceptions -fno-rtti -nostdlib -I kernel
 LDFLAGS = -T linker.ld
 
 BUILD_DIR = build
@@ -56,7 +56,6 @@ $(BUILD_DIR)/core/%.elf: $(BUILD_DIR)/core/%.o
 
 $(KERNEL_BIN): $(OBJS)
 	$(LD) $(LDFLAGS) -o $@ $^
-	$(LD) $(LDFLAGS) -o $@ $^
 
 # Build ISO: ensure core ELFs are built then copy kernel and core ELFs to ISO
 $(ISO_NAME): $(KERNEL_BIN) $(CORE_ELFS) $(FS_IMG)
@@ -89,6 +88,7 @@ $(FS_IMG): $(CORE_ELFS)
 	# copy core ELF files into the image using mtools (mcopy)
 	# create /core directory and copy core ELF files into it
 	mmd -i $@ ::/core >/dev/null 2>&1 || true
+	mcopy -i $@ $(CORE_ELFS) ::/ >/dev/null 2>&1 || { echo "mcopy failed; ensure mtools is installed"; exit 1; }
 	mcopy -i $@ $(CORE_ELFS) ::/core/ >/dev/null 2>&1 || { echo "mcopy failed; ensure mtools is installed"; exit 1; }
 
 
@@ -99,9 +99,14 @@ $(BUILD_DIR)/core/%.o: core/%.c
 run: $(ISO_NAME)
 	$(QEMU) -cdrom $(ISO_NAME)
 
+debug: $(ISO_NAME) $(KERNEL_BIN)
+	$(QEMU) -cdrom $(ISO_NAME) -s -S &
+	sleep 1
+	i686-elf-gdb -ex "file $(KERNEL_BIN)" -ex "target remote localhost:1234" -ex "break fat_init" -ex "continue"
+
 fs.img: $(FS_IMG)
 
 clean:
 	rm -rf $(BUILD_DIR) $(ISO_DIR) $(ISO_NAME)
 
-.PHONY: all clean run fs.img
+.PHONY: all clean run fs.img debug

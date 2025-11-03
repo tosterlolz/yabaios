@@ -9,6 +9,9 @@ global _start
 extern kernel_main
 
 _start:
+    push ebx               ; push multiboot info pointer
+    push eax               ; push multiboot magic
     call kernel_main
+    add esp, 8
     cli
     hlt

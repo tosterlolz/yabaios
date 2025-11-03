@@ -1,7 +1,22 @@
-// simple freestanding ls program for YabaiOS core (demo)
-#include "kernel.h"
+// ls - list directory contents
+#include "../kernel/kernel.h"
 
 void _start() {
-    kernel_api()->log_print("core ls:\n  echo  cat  touch  edit\n");
-    for (;;) __asm__("hlt");
+    struct program_args *args = program_args();
+
+    if (!args || args->argc < 1) {
+        kernel_api()->log_print("ls\n");
+        return;
+    }
+
+    /* Parse options (reserved for future use) */
+    (void)args;  /* Mark as intentionally unused if no options */
+
+    /* List files */
+    if (kernel_api()->fat_list_files) {
+        kernel_api()->fat_list_files();
+    } else {
+        kernel_api()->log_print("ls: fat_list_files not available\n");
+    }
 }
+

@@ -10,52 +10,58 @@ static uint32_t root_dir_offset;
 static uint32_t data_offset;
 
 bool fat_init(void *image_base) {
-    // the module passed by GRUB may not be aligned exactly at the FAT boot sector
-    // scan the first 4KiB for a plausible BPB if the first candidate looks wrong
     uint8_t *base = (uint8_t *)image_base;
-    // scan up to 64 KiB to find a BPB (handles MBR-padding and offsets)
-    size_t scan_limit = 64 * 1024;
-    bool found = false;
-    for (size_t off = 0; off + 512 <= scan_limit; off += 512) {
-        FAT_BPB *candidate = (FAT_BPB *)(base + off);
-        // must have boot signature 0x55AA at offset+510
-        if ((base + off)[510] != 0x55 || (base + off)[511] != 0xAA) continue;
-        // basic sanity checks
-        uint16_t bps = candidate->bytesPerSector;
-        uint8_t spc = candidate->sectorsPerCluster;
-        uint16_t rsv = candidate->reservedSectors;
-        uint16_t spf = candidate->sectorsPerFAT;
-        uint32_t total = candidate->totalSectors32 ? candidate->totalSectors32 : candidate->totalSectors16;
-        if (bps == 512 && spc >= 1 && spc <= 128 && rsv > 0 && spf > 0 && total > 0) {
-            fat_image = base + off;
-            bpb = candidate;
-            found = true;
+    
+    log_message("FAT: fat_init called");
+    
+    // Log the first bytes to see what we're actually receiving
+    log_print("FAT: First 32 bytes: ");
+    for (int i = 0; i < 32; i++) {
+        log_put_char("0123456789ABCDEF"[(base[i] >> 4) & 0xF]);
+        log_put_char("0123456789ABCDEF"[base[i] & 0xF]);
+        if ((i + 1) % 16 == 0) log_put_char('\n');
+    }
+    
+    // First, look for the boot signature 0x55AA to confirm we have valid sectors
+    uint8_t *candidate_offset = NULL;
+    
+    // Scan for boot signature in first 2KB
+    for (int offset = 0; offset < 2048; offset += 512) {
+        if (base[offset + 510] == 0x55 && base[offset + 511] == 0xAA) {
+            log_hex("FAT: Found boot signature at offset ", offset);
+            candidate_offset = base + offset;
             break;
         }
     }
-
-    if (!found) {
-        // try MBR partition table: check for 0x55AA at offset 0x1FE
-        if (base[510] == 0x55 && base[511] == 0xAA) {
-            // partition table first entry starts at 0x1BE, starting LBA at offset +8 (little-endian)
-            uint8_t *pentry = base + 0x1BE;
-            uint32_t start_lba = *(uint32_t *)(pentry + 8);
-            uint32_t byte_offset = start_lba * 512u;
-            FAT_BPB *candidate = (FAT_BPB *)(base + byte_offset);
-            // verify candidate quickly
-            if (candidate->bytesPerSector == 512 || candidate->bytesPerSector == 1024 || candidate->bytesPerSector == 2048 || candidate->bytesPerSector == 4096) {
-                fat_image = base + byte_offset;
-                bpb = candidate;
-                found = true;
-            }
-        }
-
-        if (!found) {
-            log_message("FAT: Unsupported or missing FAT image (no valid BPB found).");
-            return false;
-        }
+    
+    if (!candidate_offset) {
+        log_message("FAT: No boot signature found");
+        return false;
     }
+    
+    // Now validate the BPB fields
+    FAT_BPB *candidate = (FAT_BPB *)candidate_offset;
+    uint16_t bps = candidate->bytesPerSector;
+    uint8_t spc = candidate->sectorsPerCluster;
+    uint16_t rsv = candidate->reservedSectors;
+    uint16_t spf = candidate->sectorsPerFAT;
+    uint32_t total = candidate->totalSectors32 ? candidate->totalSectors32 : candidate->totalSectors16;
+    
+    log_hex("FAT: BPS=", bps);
+    log_hex("FAT: SPC=", spc);
+    log_hex("FAT: RSV=", rsv);
+    log_hex("FAT: SPF=", spf);
+    log_hex("FAT: Total=", total);
+    
+    if (bps != 512 || spc < 1 || spc > 128 || rsv == 0 || spf == 0 || total == 0) {
+        log_message("FAT: BPB fields invalid");
+        return false;
+    }
+    
+    fat_image = candidate_offset;
+    bpb = candidate;
 
+    // compute commonly used offsets
     root_dir_offset = (bpb->reservedSectors + (bpb->numFATs * bpb->sectorsPerFAT)) * bpb->bytesPerSector;
     data_offset = root_dir_offset + (bpb->rootEntryCount * sizeof(FAT_DirEntry));
 
@@ -168,7 +174,6 @@ bool fat_read_file(const char *filename, void *out_buffer, uint32_t *out_size) {
         }
     }
 
-    log_message("FAT: File not found.");
     return false;
 }
 
@@ -215,6 +220,12 @@ void fat_list_files(void) {
             continue;
         }
         name[pos] = '\0';
+
+        for (int j = 0; name[j]; j++) {
+            if (name[j] >= 'A' && name[j] <= 'Z') {
+                name[j] = (char)(name[j] - 'A' + 'a');
+            }
+        }
 
         log_print("  ");
         log_print(name);

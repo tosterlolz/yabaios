@@ -5,9 +5,12 @@
 #include "io.h"
 #include "../fs/fat.h"
 #include "elf.h"
+#include "../vga/vga.h"
 #include <stdbool.h>
 #include <stddef.h>
 
+/* External kernel functions */
+extern const char *kernel_get_cwd(void);
 
 #define MAX_INPUT 128
 
@@ -15,7 +18,11 @@ static char input_buffer[MAX_INPUT];
 static int input_length = 0;
 
 void shell_prompt() {
-    log_print("\n> ");
+    log_set_color(VGA_COLOR_LIGHT_CYAN, VGA_COLOR_BLACK);
+    log_print("\n");
+    log_print(kernel_get_cwd());
+    log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
+    log_print(" > ");
 }
 
 void shell_clear_input() {
@@ -52,21 +59,36 @@ void shell_execute() {
         uint8_t name11[11];
         fat_format_83_name(cmdtoken, name11);
 
+        bool has_ext = false;
+        for (int i = 8; i < 11; i++) {
+            if (name11[i] != ' ') {
+                has_ext = true;
+                break;
+            }
+        }
+
+        uint8_t name11_with_ext[11];
+        memcpy(name11_with_ext, name11, 11);
+        if (!has_ext) {
+            name11_with_ext[8] = 'E';
+            name11_with_ext[9] = 'L';
+            name11_with_ext[10] = 'F';
+        }
+
         static uint8_t elf_buf[64 * 1024];
         uint32_t elf_size = 0;
-        if (fat_read_file((const char *)name11, elf_buf, &elf_size)) {
-            // find args (rest of the input)
-            const char *args = input_buffer + ci;
-            while (*args == ' ') args++;
-            elf_run_from_memory(elf_buf, elf_size, args);
+        if (fat_read_file((const char *)name11, elf_buf, &elf_size) ||
+            (!has_ext && fat_read_file((const char *)name11_with_ext, elf_buf, &elf_size))) {
+            // Pass the entire command line (including command name as argv[0])
+            elf_run_from_memory(elf_buf, elf_size, input_buffer);
         } else {
             // try /core/<name>
             uint8_t dir11[11];
             fat_format_83_name("core", dir11);
-            if (fat_read_file_in_dir((const char *)dir11, (const char *)name11, elf_buf, &elf_size)) {
-                const char *args = input_buffer + ci;
-                while (*args == ' ') args++;
-                elf_run_from_memory(elf_buf, elf_size, args);
+            if (fat_read_file_in_dir((const char *)dir11, (const char *)name11, elf_buf, &elf_size) ||
+                (!has_ext && fat_read_file_in_dir((const char *)dir11, (const char *)name11_with_ext, elf_buf, &elf_size))) {
+                // Pass the entire command line (including command name as argv[0])
+                elf_run_from_memory(elf_buf, elf_size, input_buffer);
             } else {
                 log_print("\nUnknown command\n");
             }
@@ -94,7 +116,9 @@ void shell_input(char c) {
 }
 
 void shell_init() {
+    log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
     log_print("YSH ready. Type 'help' for commands.\n");
+    log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
     shell_prompt();
 }
 
