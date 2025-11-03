@@ -3,7 +3,7 @@
 
 void _start() {
     struct program_args *args = program_args();
-
+    kernel_api()->log_print("\n");
     if (!args || args->argc <= 1) {
         kernel_api()->log_print("\n");
         return;

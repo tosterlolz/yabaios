@@ -57,6 +57,13 @@ void kernel_main(uint32_t magic, uint32_t addr) {
         log_put_char("0123456789ABCDEF"[(mbi->framebuffer_addr >> 28) & 0xF]);
         log_put_char("0123456789ABCDEF"[(mbi->framebuffer_addr >> 24) & 0xF]);
         log_print("\n");
+        log_print("Resolution: ");
+        log_print_int(mbi->framebuffer_width);
+        log_print("x");
+        log_print_int(mbi->framebuffer_height);
+        log_print(" pitch=");
+        log_print_int(mbi->framebuffer_pitch);
+        log_print("\n");
         log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
         
         /* Support RGB direct color (type=1) and indexed color (type=0) framebuffers
@@ -79,7 +86,13 @@ void kernel_main(uint32_t magic, uint32_t addr) {
                 (uint8_t)mbi->framebuffer_blue_field_position,
                 (uint8_t)mbi->framebuffer_blue_mask_size)) {
                 log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);
-                log_print("✓ RGB Framebuffer initialized!\n");
+                log_print("✓ RGB Framebuffer initialized at ");
+                log_print_int(mbi->framebuffer_width);
+                log_print("x");
+                log_print_int(mbi->framebuffer_height);
+                log_print("x");
+                log_print_int(mbi->framebuffer_bpp);
+                log_print("bpp.\n");
                 log_set_color(VGA_COLOR_LIGHT_GREEN, VGA_COLOR_BLACK);
             } else {
                 log_set_color(VGA_COLOR_LIGHT_YELLOW, VGA_COLOR_BLACK);

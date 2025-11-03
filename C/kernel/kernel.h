@@ -3,6 +3,7 @@
 #define KERNEL_KERNEL_H
 
 #include <stdint.h>
+#include <stddef.h>
 
 struct kernel_api {
     void (*log_print)(const char *);
@@ -12,8 +13,8 @@ struct kernel_api {
     void (*log_backspace)(void);
     void (*log_set_color)(uint8_t fg, uint8_t bg);
     void (*log_print_int)(int);
-    int  (*strlen)(const char *);
-    int  (*fat_read_file)(const char *filename, void *out_buffer, uint32_t size);
+    size_t (*strlen)(const char *);
+    int  (*fat_read_file)(const char *filename, void *out_buffer, uint32_t *out_size);
     int  (*fat_write_file)(const char *filename, const void *data, uint32_t size);
     void (*fat_list_files)(void);
     const char *(*get_cwd)(void);
