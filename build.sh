@@ -24,13 +24,12 @@ prog_help() {
 usage: $0 <command>
 
 commands:
-  build       build kernel object files and link kernel (produces $(KERNEL_ELF))
-  programs    build programs and create initfs image ($(PROGRAM_IMG))
-  iso         build the ISO (depends on build + programs)
-  yabailoader build the floppy-style YabaiLoader image (for testing loader)
-  run         boot the ISO with qemu (requires $(ISO))
+  build       build kernel object files and link kernel (produces zig-out/build/kernel.elf)
+  programs    build programs and create initfs image (zig-out/initfs.img)
+  iso         build the GRUB ISO (depends on build + programs)
+  run         boot the ISO with qemu (requires zig-out/YabaiOS.iso)
   clean       remove zig-out
-  smoke       quick run: build + programs but skip xorriso/limine
+  smoke       quick run: build + programs but skip xorriso/grub
   help        show this message
 
 EOF
@@ -38,11 +37,11 @@ EOF
 
 build_kernel() {
     echo "[build] assembling boot64 and interrupt stubs"
-    $NASM -f elf64 src/boot/boot64.asm -o zig-out/build/boot64.o
-    $NASM -f elf64 src/boot/interrupt_stubs.asm -o zig-out/build/interrupt_stubs.o
+    $NASM -f elf32 src/boot/boot64.asm -o zig-out/build/boot64.o
+    $NASM -f elf32 src/boot/interrupt_stubs.asm -o zig-out/build/interrupt_stubs.o
 
     echo "[build] compiling kernel zig -> object"
-    $ZIG build-obj -target x86_64-freestanding-none -O ReleaseSmall -femit-bin=zig-out/kernel.o src/kernel/kernel.zig
+    $ZIG build-obj -target i386-freestanding-none -O ReleaseSmall -femit-bin=zig-out/kernel.o src/kernel/kernel.zig
 
     echo "[build] building libc stub"
     x86_64-elf-gcc -c -fno-builtin -nostdlib -fno-stack-protector -o zig-out/libc_stub.o libc_stub.c
@@ -168,35 +167,6 @@ GRUBCFG
     echo "[iso] done: $ISO"
 }
 
-build_yabailoader() {
-    echo "[yabai] building boot sector and stage2"
-    $NASM -f bin src/boot/boot_sector.asm -o zig-out/boot_sector.bin
-    $NASM -f bin src/boot/stage2.asm -o zig-out/stage2.bin
-
-    if [ ! -f "$KERNEL_ELF" ]; then
-        echo "kernel ELF not found, linking kernel first"
-        build_kernel
-    fi
-
-    echo "[yabai] creating flat kernel binary"
-    mkdir -p zig-out
-    $OBJCOPY -O binary "$KERNEL_ELF" zig-out/kernel.bin
-
-    echo "[yabai] building floppy image zig-out/YabaiLoader.img"
-    dd if=/dev/zero of=zig-out/YabaiLoader.img bs=512 count=2880 2>/dev/null || true
-    dd if=zig-out/boot_sector.bin of=zig-out/YabaiLoader.img conv=notrunc 2>/dev/null || true
-    dd if=zig-out/stage2.bin of=zig-out/YabaiLoader.img bs=512 seek=1 conv=notrunc 2>/dev/null || true
-
-    kern_size=$(stat -c%s zig-out/kernel.bin)
-    kern_sects=$(( (kern_size + 511) / 512 ))
-    printf "\x%02x\x%02x" $((kern_sects & 0xff)) $(((kern_sects >> 8) & 0xff)) > /tmp/yb_kcount.bin
-    dd if=/tmp/yb_kcount.bin of=zig-out/YabaiLoader.img bs=1 seek=$((8*512)) conv=notrunc 2>/dev/null || true
-    dd if=zig-out/kernel.bin of=zig-out/YabaiLoader.img bs=512 seek=9 conv=notrunc 2>/dev/null || true
-    rm -f /tmp/yb_kcount.bin
-
-    echo "[yabai] yabai loader created: zig-out/YabaiLoader.img"
-}
-
 run_qemu() {
     if [ ! -f "$ISO" ]; then
         echo "ISO not found, building first"
@@ -215,9 +185,6 @@ case ${1:-help} in
         ;;
     iso)
         build_iso
-        ;;
-    yabailoader)
-        build_yabailoader
         ;;
     run)
         run_qemu

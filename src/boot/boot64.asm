@@ -20,85 +20,43 @@ extern kernel_main
 
 _start:
     cli
+    cld
     
-    xor eax, eax
-    xor ebx, ebx
-    xor ecx, ecx
-    xor edx, edx
-    xor esi, esi
-    xor edi, edi
-    xor ebp, ebp
+    ; DEBUG: Write '1' to VGA
+    mov eax, 0xB8000
+    mov byte [eax], '1'
+    mov byte [eax + 1], 0x0F
     
-    mov esp, 0x7000
+    ; Save multiboot info
+    mov [multiboot_magic], eax
+    mov [multiboot_info], ebx
     
-    jmp startup_64bit
-
-align 16
-startup_64bit:
-    ; Clear page tables
-    mov eax, 0x1000
-    xor ecx, ecx
-clear_tables:
-    mov dword [eax], 0
-    add eax, 4
-    cmp eax, 0x4000
-    jl clear_tables
+    ; DEBUG: Write '2'
+    mov eax, 0xB8002
+    mov byte [eax], '2'
+    mov byte [eax + 1], 0x0F
     
-    ; Set up PML4
-    mov eax, 0x2003
-    mov dword [0x1000], eax
-    mov dword [0x1000 + 0x1f8], eax
+    ; Set up stack
+    mov esp, 0x100000
     
-    ; Set up PDPT
-    mov eax, 0x3003
-    mov dword [0x2000], eax
-    mov dword [0x2000 + 0x1f8], eax
+    ; DEBUG: Write '3'
+    mov eax, 0xB8004
+    mov byte [eax], '3'
+    mov byte [eax + 1], 0x0F
     
-    ; Set up PD - map first 2MB
-    mov eax, 0x83
-    mov dword [0x3000], eax
-    mov dword [0x3000 + 0x1f8], eax
+    ; Call kernel_main directly (32-bit)
+    push dword [multiboot_info]
+    push dword [multiboot_magic]
+    call kernel_main
     
-    ; Set CR3 to PML4
-    mov eax, 0x1000
-    mov cr3, eax
-    
-    ; Enable PAE in CR4
-    mov eax, cr4
-    or eax, 0x20
-    mov cr4, eax
-    
-    ; Enable long mode in EFER MSR
-    mov ecx, 0xc0000080
-    rdmsr
-    or eax, 0x100
-    wrmsr
-    
-    ; Enable paging in CR0
-    mov eax, cr0
-    or eax, 0x80000001
-    mov cr0, eax
-    
-    ; Load GDT and jump to 64-bit code
-    lgdt [gdtr]
-    jmp 0x08:kernel_entry_64bit
-
-align 16
-gdt:
-    dq 0                       ; Null descriptor
-    dq 0x00209A0000000000      ; Code descriptor (64-bit)
-    dq 0x0000920000000000      ; Data descriptor
-
-gdtr:
-    dw 24
-    dd gdt
-
-bits 64
-kernel_entry_64bit:
-    mov rsp, 0x7000
-    
-    mov rax, kernel_main
-    call rax
+    ; DEBUG: Write 'X' if we somehow return
+    mov eax, 0xB8006
+    mov byte [eax], 'X'
+    mov byte [eax + 1], 0x0F
     
     cli
     hlt
+
+section .data
+multiboot_magic: dd 0
+multiboot_info: dd 0

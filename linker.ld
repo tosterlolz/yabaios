@@ -2,8 +2,8 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Multiboot-compatible entry at 0x20000 for floppy loader */
-    . = 0x20000;
+    /* Multiboot2 standard load address: 1MB */
+    . = 0x100000;
 
     .multiboot_header : {
         *(.multiboot_header)
