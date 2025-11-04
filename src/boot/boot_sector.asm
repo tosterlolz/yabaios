@@ -1,134 +1,86 @@
 bits 16
 org 0x7c00
 
-; El Torito bootable image
-; This is loaded by the BIOS and needs to bootstrap into 64-bit mode
+; Minimal boot sector that loads stage2 (sectors 1..7) at 0x0000:0x8000
 
-section .text
-global _start
-
-_start:
+start:
     cli
-    
-    ; Set up real mode segments
     xor ax, ax
     mov ds, ax
     mov es, ax
     mov ss, ax
     mov sp, 0x7c00
-    
-    ; Print "Booting..." using BIOS
-    mov si, boot_msg
-    call print_string
-    
-    ; Load kernel from disk
-    ; For now, we'll just jump to the kernel at 1MB
-    ; In a real bootloader, we'd read from disk
-    
-    ; Enable A20 line
-    call enable_a20
-    
-    ; Switch to protected mode first, then long mode
-    ; Load GDT
-    lgdt [gdt_pointer]
-    
-    ; Enable PE bit in CR0
-    mov eax, cr0
-    or eax, 1
-    mov cr0, eax
-    
-    ; Jump to 32-bit code
-    jmp 0x08:protected_mode
 
-bits 32
-protected_mode:
-    ; Set up data segments
-    mov ax, 0x10
-    mov ds, ax
-    mov es, ax
-    mov ss, ax
-    
-    ; Set up stack
-    mov esp, 0x7000
-    
-    ; Now set up long mode
-    ; Enable PAE
-    mov eax, cr4
-    or eax, 0x20
-    mov cr4, eax
-    
-    ; Set up page tables (identity map first 2MB)
-    mov eax, 0x1000
-    xor ecx, ecx
-clear_tables:
-    mov dword [eax], 0
-    add eax, 4
-    cmp eax, 0x4000
-    jl clear_tables
-    
-    ; PML4
-    mov eax, 0x2003
-    mov dword [0x1000], eax
-    
-    ; PDPT
-    mov eax, 0x3003
-    mov dword [0x2000], eax
-    
-    ; PD with 2MB pages
-    mov eax, 0x83
-    mov dword [0x3000], eax
-    
-    ; Load CR3
-    mov eax, 0x1000
-    mov cr3, eax
-    
-    ; Enable long mode in EFER MSR
-    mov ecx, 0xc0000080
-    rdmsr
-    or eax, 0x100
-    wrmsr
-    
-    ; Enable paging
-    mov eax, cr0
-    or eax, 0x80000001
-    mov cr0, eax
-    
-    ; Jump to 64-bit code
-    jmp 0x08:0x100000
-
-; 16-bit functions
-bits 16
-enable_a20:
-    ; Simple A20 enable using keyboard controller
-    mov al, 0xd1
-    out 0x64, al
-    mov al, 0xdf
-    out 0x60, al
-    ret
-
-print_string:
-    lodsb
-    test al, al
-    jz .done
-    mov ah, 0x0e
+    ; debug: print '1' to screen so we know boot sector ran
+    mov ah, 0x0E
+    mov al, '1'
     int 0x10
-    jmp print_string
-.done:
+
+    ; load stage2 into 0x8000
+    mov si, 1          ; LBA of first stage2 sector
+    mov cx, 7          ; number of sectors to read (1..7)
+    mov bx, 0x8000     ; buffer offset (we'll use ES=0)
+    mov es, ax         ; ES = 0
+read_stage2_loop:
+    ; compute CHS for LBA in SI
+    push si
+    call lba_to_chs
+    pop si
+    mov ah, 0x02       ; read sectors
+    mov al, 1
+    mov dl, 0x00       ; floppy drive
+    int 0x13
+    jc disk_err
+
+    add bx, 512
+    add si, 1
+    loop read_stage2_loop
+
+    ; jump to stage2 at 0x0000:0x8000
+    jmp 0x0000:0x8000
+
+disk_err:
+    hlt
+
+; LBA->CHS conversion
+; inputs: SI = LBA
+; outputs: CH=track, CL=sector (bits 0-5, bits 6-7 = track bits 8-9), DH=head
+lba_to_chs:
+    push ax
+    push bx
+    push cx
+    push dx
+    push si
+
+    ; SI = LBA
+    mov ax, si
+    xor dx, dx
+    mov bx, 18
+    div bx              ; AX = quotient, DX = remainder (sector-1)
+    inc dl              ; DL = sector (1..18)
+    mov cl, dl          ; CL = sector
+
+    ; AX now = quotient = (cylinder*heads + head)
+    ; divide by heads (2) to get cylinder and head
+    mov bx, 2
+    xor dx, dx
+    div bx              ; AX = cylinder, DX = head
+    mov ch, al          ; CH = cylinder low byte
+    mov dh, dl          ; DH = head
+
+    ; put top bits of cylinder into CL bits 6-7
+    mov bx, ax          ; BX = cylinder
+    shr bx, 8
+    and bl, 0x03
+    shl bl, 6
+    or cl, bl
+
+    pop si
+    pop dx
+    pop cx
+    pop bx
+    pop ax
     ret
 
-boot_msg: db "YabaiOS Boot", 0
-
-; GDT
-align 8
-gdt:
-    dq 0                       ; Null descriptor
-    dq 0x00209A0000000000      ; Code descriptor
-    dq 0x0000920000000000      ; Data descriptor
-
-gdt_pointer:
-    dw 24
-    dd gdt
-
-; Padding to 512 bytes
 times 510-($-$$) db 0
-db 0x55, 0xaa  ; Boot signature
+dw 0xaa55

@@ -2,8 +2,8 @@ ENTRY(_start)
 
 SECTIONS
 {
-    /* Multiboot-compatible entry at 1MB for bootloader compatibility */
-    . = 1M;
+    /* Multiboot-compatible entry at 0x20000 for floppy loader */
+    . = 0x20000;
 
     .multiboot_header : {
         *(.multiboot_header)
