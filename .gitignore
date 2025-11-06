@@ -7,3 +7,6 @@ build/
 *.log
 *.d
 iso/
+bin/
+.zig-cache/
+zig-out/
