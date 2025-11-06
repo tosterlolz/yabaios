@@ -37,12 +37,11 @@ EOF
 
 build_kernel() {
     echo "[build] assembling boot64 and interrupt stubs"
-    # Assemble as 64-bit ELF objects so the linker (x86_64-elf-ld) can consume them
-    $NASM -f elf64 src/boot/boot64.asm -o zig-out/build/boot64.o
-    $NASM -f elf64 src/boot/interrupt_stubs.asm -o zig-out/build/interrupt_stubs.o
+    $NASM -f elf32 src/boot/boot64.asm -o zig-out/build/boot64.o
+    $NASM -f elf32 src/boot/interrupt_stubs.asm -o zig-out/build/interrupt_stubs.o
 
     echo "[build] compiling kernel zig -> object"
-    $ZIG build-obj -target x86_64-freestanding-none -O ReleaseSmall -femit-bin=zig-out/kernel.o src/kernel/kernel.zig
+    $ZIG build-obj -target i386-freestanding-none -O ReleaseSmall -femit-bin=zig-out/kernel.o src/kernel/kernel.zig
 
     echo "[build] building libc stub"
     x86_64-elf-gcc -c -fno-builtin -nostdlib -fno-stack-protector -o zig-out/libc_stub.o libc_stub.c
@@ -82,16 +81,13 @@ build_iso() {
     echo "[iso] copying kernel and initfs into $ISO_DIR/boot"
     cp "$KERNEL_ELF" "$ISO_DIR/boot/kernel.elf"
     cp "$PROGRAM_IMG" "$ISO_DIR/boot/initfs.img"
+    cp limine.cfg "$ISO_DIR/boot/limine.cfg" || true
+    cp limine.cfg "$ISO_DIR/limine.cfg" || true
 
     echo "[iso] attempting to include limine boot files if available"
     LIMINE_DATADIR=""
     if command -v limine >/dev/null 2>&1; then
         LIMINE_DATADIR=$(limine --print-datadir 2>/dev/null || true)
-    fi
-
-    if [ -f limine.cfg ]; then
-        cp limine.cfg "$ISO_DIR/boot/" || true
-        cp limine.cfg "$ISO_DIR/" || true
     fi
 
     if [ -n "$LIMINE_DATADIR" ] && [ -d "$LIMINE_DATADIR" ]; then
@@ -109,11 +105,40 @@ build_iso() {
         # Copy only our config into the limine dir
         [ -f limine.cfg ] && cp limine.cfg "$ISO_DIR/boot/limine/limine.cfg" || true
     else
-        echo "[iso] limine not found on host; will attempt GRUB as fallback"
+        echo "[iso] limine not found on host; will build plain ISO and attempt installer if present"
     fi
 
     echo "[iso] creating ISO image: $ISO"
-    # If limine files are available, use xorriso with the appropriate El-Torito image
+    # If grub-mkrescue is available, prefer GRUB (simpler config for multiboot kernels)
+    if command -v grub-mkrescue >/dev/null 2>&1; then
+        echo "[iso] grub-mkrescue found; building GRUB-based ISO"
+        GRUB_DIR="$(pwd)/zig-out/grub_iso"
+        rm -rf "$GRUB_DIR"
+        mkdir -p "$GRUB_DIR/boot/grub"
+        # copy kernel/initrd
+        cp "$ISO_DIR/boot/kernel.elf" "$GRUB_DIR/boot/kernel.elf"
+        cp "$ISO_DIR/boot/initfs.img" "$GRUB_DIR/boot/initfs.img"
+        # write grub.cfg that uses multiboot2
+        cat > "$GRUB_DIR/boot/grub/grub.cfg" <<'GRUBCFG'
+set timeout=3
+set default=0
+
+menuentry "YabaiOS (multiboot2)" {
+    multiboot2 /boot/kernel.elf
+    module2 /boot/initfs.img
+    boot
+}
+GRUBCFG
+
+        grub-mkrescue -o "$ISO" "$GRUB_DIR" >/dev/null 2>&1 || {
+            echo "[iso] grub-mkrescue failed, falling back to limine"
+        }
+        rm -rf "$GRUB_DIR"
+        echo "[iso] done: $ISO (GRUB)"
+        return
+    fi
+
+    # Fallback: build ISO using limine files copied earlier
     IMG=""
     if [ -f "$ISO_DIR/boot/limine/limine-cd.bin" ]; then
         IMG=boot/limine/limine-cd.bin
@@ -128,18 +153,18 @@ build_iso() {
     if [ -n "$IMG" ]; then
         echo "[iso] using El-Torito image: $IMG"
         $XORRISO -as mkisofs -o "$ISO" -b "$IMG" -no-emul-boot -boot-load-size 4 -boot-info-table "$ISO_DIR"
-        # Try installer tool: prefer `limine bios-install` when `limine` is present
-        if command -v limine >/dev/null 2>&1; then
-            limine bios-install "$ISO" || true
-        fi
-        echo "[iso] done: $ISO (limine)"
-        return 0
+    else
+        $XORRISO -as mkisofs -o "$ISO" "$ISO_DIR"
     fi
 
-    # If we reach here, limine runtime image wasn't found. Fail because GRUB has been removed.
-    echo "[iso] ERROR: limine runtime not found in '$ISO_DIR/boot/limine'."
-    echo "[iso] Please install limine on the host (provide 'limine' and 'limine-install') or place the limine runtime files into '$ISO_DIR/boot/limine'."
-    return 1
+    # Try installer tools as a best-effort
+    if command -v limine-install >/dev/null 2>&1; then
+        limine-install "$ISO" || true
+    elif command -v limine >/dev/null 2>&1; then
+        limine bios-install "$ISO" || true
+    fi
+
+    echo "[iso] done: $ISO"
 }
 
 run_qemu() {
